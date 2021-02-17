@@ -37,7 +37,7 @@ k4 <- kmeans(ready_to_cluster, centers = 4, nstart = 10, iter.max = 30)
 set.seed(234) 
 k5 <- kmeans(ready_to_cluster, centers = 5, nstart = 10, iter.max = 30)
 set.seed(234) 
-k6 <- kmeans(ready_to_cluster, centers = 6, nstart = 20, iter.max = 30)
+k6 <- kmeans(ready_to_cluster, centers = 6, nstart = 10, iter.max = 30)
 set.seed(234) 
 k7 <- kmeans(ready_to_cluster, centers = 7, nstart = 10, iter.max = 30)
 #May throw warning message that it took many iterations to converge;
