@@ -7,10 +7,10 @@ segs <- eagle_subset %>% group_by(segment_id) %>% summarize(len = n())
 ##and look at histograms 
 
 flight_vars <- eagle_subset %>% 
-  select(AGL:abs_angle)
+  select(KPH:abs_VR)
 
 library(psych)
-multi.hist(flight_vars)
+multi.hist(flight_vars, global = FALSE, breaks=40,density=FALSE)
 
 ##Sqrt transform the skewed ones and scale everything:
 
@@ -43,12 +43,11 @@ k7 <- kmeans(ready_to_cluster, centers = 7, nstart = 10, iter.max = 30)
 #May throw warning message that it took many iterations to converge;
 #should be okay as long as ifault = 0
 
-k5$ifault
 k6$ifault
 k7$ifault
 
 ##########################################################
-##Next, we'll do some plotting.
+##Next, we'll do some plotting to help us choose K.
 ## First, check out the within-sum-of-squares plot
 ##########################################################
 
@@ -62,7 +61,37 @@ wss_df = data.frame(k = 2:7,
 
 #Looking for an elbow, in order to determine "best k":
 with(wss_df, plot(k,wss,type='b'))
-#no elbow evident.  
+#no obvious elbow.  
+
+##########################################################
+##Next, we'll bootstrap the average silhouette width.
+##Calculate the average silhouettes for B=100 bootstrap samples
+## of size 1000 each (for computational ease)
+## In paper, B = 1000 of size 10,000 each.
+##########################################################
+
+library(cluster)
+
+B <- 100
+avg.sils <- matrix(NA,B,6)
+set.seed(992021)
+for(b in 1:B){
+  ids <- sample(1:nrow(ready_to_cluster),1000,replace=TRUE) 
+  distmat <- dist(ready_to_cluster[ids,])
+  clusters <- list(k2$cluster[ids],
+                   k3$cluster[ids],
+                   k4$cluster[ids],
+                   k5$cluster[ids],
+                   k6$cluster[ids],
+                   k7$cluster[ids])
+  for(i in 1:6) {
+    sil <- silhouette(clusters[[i]],distmat) 
+    avg.sils[b,i] <- mean(sil[,3])
+  }
+}
+
+plot(2:7, avg.sils[1,],type='b',ylim=c(0.2, 0.35),col='#00000040', ylab='Average silhouette width',xlab = 'K')
+for(i in 2:nrow(avg.sils)) lines(2:7, avg.sils[i,],type='b',col='#00000040')
 
 
 ##Let's add the cluster assignments to the data set
@@ -95,67 +124,38 @@ library(ggplot2)
 cbpal <- c("#009E73","#F0E442", "#000000",  "#D55E00","#56B4E9","#999999","#CC79A7") #black instead of green; harsh yellow; red not pink
 
 
-#2 obviously distinct clusters:
+#K=2
 ggplot(data = eagle_subset) + 
   geom_point(aes(x = pc1, y = pc2, col = factor(k2)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) + #Just to zoom in on the biplot a bit
+  xlim(c(-5,5)) + ylim(c(-6,6)) + #Just to zoom in on the biplot a bit
   guides(color='none') + 
   xlab('PC1') + ylab('PC2')+ 
   ggtitle('K=2') +
   scale_color_manual(values = cbpal[2:1])
 
 
-#3 obviously distinct clusters:
+#K=3
 ggplot(data = eagle_subset) + 
   geom_point(aes(x = pc1, y = pc2, col = factor(k3)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) +
+  xlim(c(-5,5)) + ylim(c(-6,6)) +
   guides(color='none') + 
   xlab('PC1') + ylab('PC2')+ 
   ggtitle('K=3') +
-  scale_color_manual(values = cbpal[c(5,1,2)])
+  scale_color_manual(values = cbpal[c(1,2,5)])
 
 
-#4 obviously distinct clusters:
+#K=4
 ggplot(data = eagle_subset) + 
   geom_point(aes(x = pc1, y = pc2, col = factor(k4)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) +
+  xlim(c(-5,5)) + ylim(c(-6,6)) +
   guides(color='none') + 
   xlab('PC1') + ylab('PC2')+ 
   ggtitle('K=4') +
-  scale_color_manual(values = cbpal[c(1,4,2,5)])
-
-#5 obviously distinct clusters:
-ggplot(data = eagle_subset) + 
-  geom_point(aes(x = pc1, y = pc2, col = factor(k5)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) +
-  guides(color='none') + 
-  xlab('PC1') + ylab('PC2')+ 
-  ggtitle('K=5') +
-  scale_color_manual(values = cbpal[c(4,2,1,3,5)])
+  scale_color_manual(values = cbpal[c(5,4,1,2)])
 
 
 
-#Although there are 6 clusters here, there are only 5 visibly distinct.
-#The 6th cluster greatly overlaps with the other 5.
-ggplot(data = eagle_subset) + 
-  geom_point(aes(x = pc1, y = pc2, col = factor(k6)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) +
-  guides(color='none') + 
-  xlab('PC1') + ylab('PC2')+ 
-  ggtitle('K=6') +
-  scale_color_manual(values = cbpal[c(1,4,2,3,6,5)])
-
-  
-
-#Similar story here as for K=6:
-ggplot(data = eagle_subset) + 
-  geom_point(aes(x = pc1, y = pc2, col = factor(k7)),shape='.')+
-  xlim(c(-5,5)) + ylim(c(-3,6)) +
-  guides(color='none') + 
-  xlab('PC1') + ylab('PC2')+ 
-  ggtitle('K=7') +
-  scale_color_manual(values = cbpal[c(1,2,5,4,3,6,7)])
-
+#...etc
 
 
 
@@ -175,26 +175,25 @@ ggplot(data = eagle_subset) +
 
 eagle_subset <- eagle_subset %>% 
   mutate(behavior = case_when(
-                              k5==1~'directional',
-                              k5==2~'ascending',
-                              k5==3~'perching',
-                              k5==4~'flapping',
-                              k5==5~'gliding')) %>% 
-  mutate(behavior = factor(behavior, levels = c('perching','ascending','flapping','directional','gliding')))
+                              k4==1~'gliding',
+                              k4==2~'flapping',
+                              k4==3~'perching',
+                              k4==4~'ascending')) %>% 
+  mutate(behavior = factor(behavior, levels = c('perching','ascending','flapping','gliding')))
 
 pdf('boxplots.pdf')
 ggplot(data = eagle_subset) + 
   geom_boxplot(aes(x = behavior, fill = behavior, y = AGL),outlier.shape = NA) + 
-  scale_fill_manual(values = cbpal[1:5])
+  scale_fill_manual(values = cbpal[c(1,2,4,5)])
 ggplot(data = eagle_subset) + 
   geom_boxplot(aes(x = behavior, fill = behavior, y = abs_angle),outlier.shape = NA) + 
-  scale_fill_manual(values = cbpal[1:5])
+  scale_fill_manual(values =cbpal[c(1,2,4,5)])
 ggplot(data = eagle_subset) + 
   geom_boxplot(aes(x = behavior, fill = behavior, y = KPH),outlier.shape = NA) + 
-  scale_fill_manual(values = cbpal[1:5])
+  scale_fill_manual(values = cbpal[c(1,2,4,5)])
 ggplot(data = eagle_subset) + 
   geom_boxplot(aes(x = behavior, fill = behavior, y = VerticalRate),outlier.shape = NA) + 
-  scale_fill_manual(values = cbpal[1:5]) + ylim(c(-5,5)) + 
+  scale_fill_manual(values = cbpal[c(1,2,4,5)]) + ylim(c(-5,5)) + 
   geom_hline(aes(yintercept=0), linetype=2)
 dev.off()
 
@@ -214,8 +213,8 @@ segment_lengths <- eagle_subset %>%
 head(segment_lengths,20)
 
 segment_to_plot <- eagle_subset %>% 
-  filter(segment_id==6929)
+  filter(segment_id==7471)
 
 ggplot(data = segment_to_plot,aes(x = X, y = Y)) +
   geom_point(aes(col = behavior),size=.5) + 
-  scale_color_manual(values = cbpal[1:5])
+  scale_color_manual(values = cbpal[c(1,2,4,5)])
